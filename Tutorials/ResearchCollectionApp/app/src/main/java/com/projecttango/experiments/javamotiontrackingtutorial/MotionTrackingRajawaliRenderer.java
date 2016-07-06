@@ -33,69 +33,85 @@ import org.rajawali3d.renderer.RajawaliRenderer;
 
 import com.projecttango.rajawali.Pose;
 import com.projecttango.rajawali.ScenePoseCalculator;
+import com.projecttango.rajawali.TouchViewHandler;
+import com.projecttango.rajawali.renderables.FrustumAxes;
+import com.projecttango.rajawali.renderables.Grid;
+import com.projecttango.rajawali.renderables.Trajectory;
 
 /**
  * This class implements the rendering logic for the Motion Tracking application using Rajawali.
  */
 public class MotionTrackingRajawaliRenderer extends RajawaliRenderer {
 
-    private static final String TAG = MotionTrackingRajawaliRenderer.class.getSimpleName();
+    private final String TAG = MotionTrackingRajawaliRenderer.class.getSimpleName();
+
+    // Only add line segments to the trajectory if the deviced moved more than THRESHOLD meters
+    private static final double THRESHOLD = 0.002f;
+
     private static final float CAMERA_NEAR = 0.01f;
     private static final float CAMERA_FAR = 200f;
+
+    private FrustumAxes mFrustumAxes;
+    private Trajectory mTrajectory;
+
+    private TouchViewHandler touchViewHandler;
+
+    // Latest available device pose;
+    private Pose mDevicePose = new Pose(Vector3.ZERO, Quaternion.getIdentity());
+    private boolean mPoseUpdated = false;
 
     private Object3D mCity;
     private DirectionalLight mLight1;
     private DirectionalLight mLight2;
 
     // Latest available device pose;
-    private Pose mDevicePose = new Pose(Vector3.ZERO, Quaternion.getIdentity());
-    private boolean mPoseUpdated = false;
+//    private Pose mDevicePose = new Pose(Vector3.ZERO, Quaternion.getIdentity());
+//    private boolean mPoseUpdated = false;
 
     public MotionTrackingRajawaliRenderer(Context context) {
         super(context);
+        touchViewHandler = new TouchViewHandler(mContext, getCurrentCamera());
     }
-
     // Override the initScene from base class to create a simple city scene with proper
     // lighting, the scene is made by an loaded OBJ file.
     @Override
     protected void initScene() {
-        mLight1 = new DirectionalLight(1.0f, -1.0f, -0.5f);
-        mLight2 = new DirectionalLight(-1.0f, -1.0f, 0.5f);
-        mLight1.setColor(0.75f, 0.75f, 0.75f);
-        mLight1.setPower(0.5f);
-        mLight2.setColor(0.8f, 0.8f, 0.8f);
-        mLight2.setPower(1);
-        getCurrentScene().addLight(mLight1);
-        getCurrentScene().addLight(mLight2);
+        Grid grid = new Grid(100, 1, 1, 0xFFCCCCCC);
+        grid.setPosition(0, -1.3f, 0);
+        getCurrentScene().addChild(grid);
 
-        LoaderOBJ objParser = new LoaderOBJ(mContext.getResources(),
-                mTextureManager, R.raw.city_obj);
-        try {
-            objParser.parse();
-            mCity = objParser.getParsedObject();
-            mCity.setPosition(0, -1.3f, 0);
-            getCurrentScene().addChild(mCity);
-        } catch (ParsingException e) {
-            Log.e(TAG, e.toString());
-        }
+        mFrustumAxes = new FrustumAxes(3);
+        getCurrentScene().addChild(mFrustumAxes);
+
+        mTrajectory = new Trajectory(Color.BLUE, 2);
+        getCurrentScene().addChild(mTrajectory);
+
         getCurrentScene().setBackgroundColor(Color.WHITE);
+
         getCurrentCamera().setNearPlane(CAMERA_NEAR);
         getCurrentCamera().setFarPlane(CAMERA_FAR);
     }
 
     @Override
     protected void onRender(long ellapsedRealtime, double deltaTime) {
+        super.onRender(ellapsedRealtime, deltaTime);
+
+        // Update the scene objects with the latest device position and orientation information.
+        // Synchronize to avoid concurrent access from the Tango callback thread below.
         synchronized (this) {
             if (mPoseUpdated) {
                 mPoseUpdated = false;
-                getCurrentCamera().setPosition(mDevicePose.getPosition());
-                getCurrentCamera().setOrientation(mDevicePose.getOrientation());
+                mFrustumAxes.setPosition(mDevicePose.getPosition());
+                mFrustumAxes.setOrientation(mDevicePose.getOrientation());
+
+                if (mTrajectory.getLastPoint().distanceTo2(mDevicePose.getPosition()) > THRESHOLD) {
+                    mTrajectory.addSegmentTo(mDevicePose.getPosition());
+                }
+
+                touchViewHandler.updateCamera(mDevicePose.getPosition(), mDevicePose.getOrientation());
             }
         }
-        // Make sure we update the camera position before OpenGL content get rendered in Rajawali.
-        super.onRender(ellapsedRealtime, deltaTime);
     }
-
     public synchronized void updateDevicePose(TangoPoseData tangoPoseData) {
         mDevicePose = ScenePoseCalculator.toOpenGLPose(tangoPoseData);
         mPoseUpdated = true;
@@ -107,7 +123,22 @@ public class MotionTrackingRajawaliRenderer extends RajawaliRenderer {
     }
 
     @Override
-    public void onTouchEvent(MotionEvent event) {
-      // Unused, but needs to be declared to adhere to the IRajawaliSurfaceRenderer interface.
+    public void onTouchEvent(MotionEvent motionEvent) {
+        touchViewHandler.onTouchEvent(motionEvent);
+    }
+
+    public synchronized void setFirstPersonView() {
+        touchViewHandler.setFirstPersonView();
+        mPoseUpdated = true;
+    }
+
+    public synchronized void setTopDownView() {
+        touchViewHandler.setTopDownView();
+        mPoseUpdated = true;
+    }
+
+    public synchronized void setThirdPersonView() {
+        touchViewHandler.setThirdPersonView();
+        mPoseUpdated = true;
     }
 }
