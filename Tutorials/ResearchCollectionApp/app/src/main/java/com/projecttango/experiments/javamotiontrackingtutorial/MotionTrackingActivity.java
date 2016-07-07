@@ -16,6 +16,9 @@
 
 package com.projecttango.experiments.javamotiontrackingtutorial;
 
+import com.androidplot.xy.LineAndPointFormatter;
+import com.androidplot.xy.SimpleXYSeries;
+import com.androidplot.xy.XYPlot;
 import com.google.atap.tangoservice.Tango;
 import com.google.atap.tangoservice.Tango.OnTangoUpdateListener;
 import com.google.atap.tangoservice.TangoConfig;
@@ -25,13 +28,24 @@ import com.google.atap.tangoservice.TangoEvent;
 import com.google.atap.tangoservice.TangoOutOfDateException;
 import com.google.atap.tangoservice.TangoPoseData;
 import com.google.atap.tangoservice.TangoXyzIjData;
+import com.microchip.android.microchipusb.MicrochipUsb;
 import com.projecttango.tangoutils.TangoPoseUtilities;
 
 import android.app.Activity;
+import android.app.PendingIntent;
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
+import android.graphics.Color;
+import android.hardware.usb.UsbDevice;
+import android.hardware.usb.UsbManager;
 import android.os.Bundle;
+import android.os.Handler;
 import android.util.Log;
+import android.view.Gravity;
 import android.view.View;
 import android.widget.Button;
 import android.widget.TextView;
@@ -41,8 +55,20 @@ import org.rajawali3d.surface.IRajawaliSurface;
 import org.rajawali3d.surface.RajawaliSurfaceView;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.text.DecimalFormat;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Random;
+
+
+import com.microchip.android.mcp2221comm.Mcp2221Config;
+import com.microchip.android.mcp2221comm.Mcp2221Comm;
+import com.microchip.android.microchipusb.Constants;
+import com.microchip.android.microchipusb.MCP2221;
+
+import com.spectrometer.Spectrometer;
+
 
 /**
  * Main Activity class for the Motion Tracking Rajawali Sample. Handles the connection to the Tango
@@ -77,12 +103,172 @@ public class MotionTrackingActivity extends Activity  implements View.OnClickLis
     private Button mConnectSpecButton;
     private Button mCollectButton;
 
+    /** Microchip Product ID. */
+    protected static final int MCP2221_PID = 0xDD;
+    /** Microchip Vendor ID. */
+    protected static final int MCP2221_VID = 0x4D8;
+    /** Spectrometer Product ID. */
+    protected static final int SPEC_PID = 0x4200;
+    /** Spectrometer Vendor ID. */
+    protected static final int SPEC_VID = 0x2457;
+    /** Custom toast - displayed in the center of the screen. */
+    private static Toast sToast;
+    /** USB permission action for the USB broadcast receiver. */
+    private static final String ACTION_USB_PERMISSION = "com.microchip.android.USB_PERMISSION";
+    /** public member to be used in the test project. */
+    public MCP2221 mcp2221;
+    /** public member to be used in the test project. */
+    public Mcp2221Comm mcp2221Comm;
+
+    public Spectrometer spectrometer;
+    PendingIntent mPermissionIntent;
+
+    SimpleXYSeries series1 = null;
+    private XYPlot plot;
+
+    boolean shouldCollect=false;
+    final Random randomGen= new Random();
+
+    /*********************************************************
+     * USB actions broadcast receiver.
+     *********************************************************/
+    private final BroadcastReceiver mUsbReceiver = new BroadcastReceiver() {
+
+        @Override
+        public void onReceive(final Context context, final Intent intent) {
+            final String action = intent.getAction();
+
+            if (ACTION_USB_PERMISSION.equals(action)) {
+                synchronized (this) {
+                    final UsbDevice device =
+                            (UsbDevice) intent.getParcelableExtra(UsbManager.EXTRA_DEVICE);
+
+                    // is usb permission has been granted, try to open a connection
+                    if (intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)) {
+                        if (device != null) {
+                            // call method to set up device communication
+                            final Constants result = mcp2221.open();
+
+                            if (result != Constants.SUCCESS) {
+                                sToast.setText("Could not open MCP2221 connection");
+                                sToast.show();
+                            } else {
+                                mcp2221Comm = new Mcp2221Comm(mcp2221);
+                                sToast.setText("MCP2221 connection opened");
+                                sToast.show();
+
+
+                            }
+                        }
+                    } else {
+                        sToast.setText("USB Permission Denied");
+                        sToast.show();
+                    }
+                }
+            }
+
+            if (UsbManager.ACTION_USB_DEVICE_DETACHED.equals(action)) {
+                sToast.setText("Device Detached");
+                sToast.show();
+                // close the connection and
+                // release all resources
+                mcp2221.close();
+                // leave a bit of time for the COM thread to close
+                try {
+                    Thread.sleep(20);
+                } catch (InterruptedException e) {
+                    // TODO Auto-generated catch block
+                    // e.printStackTrace();
+                }
+                mcp2221Comm = null;
+                // if the nav drawer isn't open change the action bar icon to show the device is
+                // detached
+
+
+            }
+
+            if (UsbManager.ACTION_USB_DEVICE_ATTACHED.equals(action)) {
+                sToast.setText("Device Attached");
+                sToast.show();
+                final UsbDevice device =
+                        (UsbDevice) intent.getParcelableExtra(UsbManager.EXTRA_DEVICE);
+                if (device != null) {
+
+                    // only try to connect if an MCP2221 is attached
+                    if (device.getVendorId() == MCP2221_VID && device.getProductId() == MCP2221_PID) {
+                        final Constants result = mcp2221.open();
+
+                        switch (result) {
+                            case SUCCESS:
+                                sToast.setText("MCP2221 Connection Opened");
+                                sToast.show();
+                                mcp2221Comm = new Mcp2221Comm(mcp2221);
+
+
+                                break;
+                            case CONNECTION_FAILED:
+                                sToast.setText("Connection Failed");
+                                sToast.show();
+                                break;
+                            case NO_USB_PERMISSION:
+                                mcp2221.requestUsbPermission(mPermissionIntent);
+                                break;
+                            default:
+                                break;
+                        }
+                    }
+                }
+            }
+
+        }
+    };
+
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
         setContentView(R.layout.activity_motion_tracking);
         mRenderer = setupGLViewAndRenderer();
+        mPermissionIntent =
+                PendingIntent.getBroadcast(this, 0, new Intent(ACTION_USB_PERMISSION), 0);
+        final IntentFilter filter = new IntentFilter(ACTION_USB_PERMISSION);
+
+        registerReceiver(mUsbReceiver, filter);
+
+        filter.addAction(UsbManager.ACTION_USB_DEVICE_DETACHED);
+        filter.addAction(UsbManager.ACTION_USB_DEVICE_ATTACHED);
+        registerReceiver(mUsbReceiver, filter);
+
+        sToast = Toast.makeText(this, "", Toast.LENGTH_SHORT);
+        sToast.setGravity(Gravity.CENTER, 0, 0);
+
+        Constants result = null;
+
+        mcp2221 = new MCP2221(this);
+        result = MicrochipUsb.getConnectedDevice(this);
+
+        if (result == Constants.MCP2221) {
+            // try to open a connection
+            result = mcp2221.open();
+
+            switch (result) {
+                case SUCCESS:
+                    sToast.setText("MCP2221 connected");
+                    sToast.show();
+                    mcp2221Comm = new Mcp2221Comm(mcp2221);
+                    break;
+                case CONNECTION_FAILED:
+                    sToast.setText("Connection failed");
+                    sToast.show();
+                    break;
+                case NO_USB_PERMISSION:
+                    mcp2221.requestUsbPermission(mPermissionIntent);
+                    break;
+                default:
+                    break;
+            }
+        }
     }
 
     private MotionTrackingRajawaliRenderer setupGLViewAndRenderer() {
@@ -227,27 +413,343 @@ public class MotionTrackingActivity extends Activity  implements View.OnClickLis
         } catch (PackageManager.NameNotFoundException e) {
             e.printStackTrace();
         }
+
+        plot = (XYPlot) findViewById(R.id.plot);
+        series1 = new SimpleXYSeries("series1");
+        series1.useImplicitXVals();
+        plot.addSeries(series1, new LineAndPointFormatter(Color.BLUE, Color.RED, Color.BLACK, null));
     }
 
+    private void connectCamera() {
+        Constants result;
 
+        mcp2221 = new MCP2221(this);
+
+
+        result = mcp2221.open();
+
+        switch (result) {
+            case SUCCESS:
+                Log.d("MCP2221","success");
+                sToast.setText("MCP2221 connected");
+                sToast.show();
+                mcp2221Comm = new Mcp2221Comm(mcp2221);
+                mConnectCamButton.setBackgroundColor(getResources().getColor(android.R.color.holo_green_dark));
+                setupMCP2221();
+                break;
+            case CONNECTION_FAILED:
+                Log.d("MCP2221","fail");
+
+                sToast.setText("MCP2221 connection failed");
+                sToast.show();
+                break;
+            case NO_USB_PERMISSION:
+                Log.d("MCP2221","no usb");
+
+                mcp2221.requestUsbPermission(mPermissionIntent);
+                break;
+            default:
+                Log.d("MCP2221","default");
+
+                break;
+        }
+
+        // Let's try to open the spectrometer
+
+
+
+    }
+    private void connectSpectrometer() {
+        Constants result;
+        spectrometer = new Spectrometer(this);
+
+        result = spectrometer.open();
+
+        switch (result) {
+            case SUCCESS:
+                Log.d("specto", "success");
+                sToast.setText("Spectrometer connected");
+                sToast.show();
+                mConnectSpecButton.setBackgroundColor(getResources().getColor(android.R.color.holo_green_dark));
+                final Handler specHandler = new Handler();
+                final int specDelay = 50; //milliseconds
+
+                specHandler.postDelayed(new Runnable() {
+                    public void run() {
+                        readSpectrometer();
+                        specHandler.postDelayed(this, specDelay);
+                    }
+                }, specDelay);
+                break;
+            case CONNECTION_FAILED:
+                Log.d("specto", "failed");
+                sToast.setText("Spectrometer connection failed");
+                sToast.show();
+                break;
+            case NO_USB_PERMISSION:
+                Log.d("specto", "no permission");
+                spectrometer.requestUsbPermission(mPermissionIntent);
+                break;
+            default:
+                Log.d("specto", "default");
+                break;
+        }
+    }
+
+    void setupMCP2221(){
+        Mcp2221Config conf = new Mcp2221Config();
+        byte[] pinDesDir = {0,0,0,0};
+        conf.setGpPinDesignations(pinDesDir);
+        conf.setGpPinDirections(pinDesDir);
+        byte[] pinVals = {1,0,0,0};
+        conf.setGpPinValues(pinVals);
+        mcp2221Comm.setSRamSettings(conf, false, false, false, false, false, false, true);
+
+        Log.d("MCP2221", "values set");
+
+    }
+
+   /* private final BroadcastReceiver mUsbReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(final Context context, final Intent intent) {
+            final String action = intent.getAction();
+            Log.d("USB", "onReceive");
+            if (ACTION_USB_PERMISSION.equals(action)) {
+                synchronized (this) {
+                    final UsbDevice device = intent.getParcelableExtra(UsbManager.EXTRA_DEVICE);
+
+                    // is usb permission has been granted, try to open a connection
+                    if (intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)) {
+                        if (device != null) {
+                            if (device.getVendorId() == mcp2221.MCP2221_VID) {
+                                // call method to set up device communication
+                                final Constants result = mcp2221.open();
+
+                                if (result != Constants.SUCCESS) {
+                                    sToast.setText("Could not open MCP2221 connection");
+                                    sToast.show();
+                                } else {
+                                    mcp2221Comm = new Mcp2221Comm(mcp2221);
+                                    sToast.setText("MCP2221 connection opened");
+                                    sToast.show();
+                                    setupMCP2221();
+
+                                }
+                            } else if (device.getVendorId() == spectrometer.SPEC_VID){
+                                // call method to set up device communication
+                                final Constants result = spectrometer.open();
+
+                                if (result != Constants.SUCCESS) {
+                                    sToast.setText("Could not open Spectrometer connection");
+                                    sToast.show();
+                                } else {
+                                    sToast.setText("Spectrometer connection opened");
+                                    sToast.show();
+                                }
+                            }
+                        }
+                    } else {
+                        sToast.setText("USB Permission Denied");
+                        sToast.show();
+                    }
+                }
+            }
+
+            if (UsbManager.ACTION_USB_DEVICE_DETACHED.equals(action)) {
+                UsbDevice device = intent.getParcelableExtra(UsbManager.EXTRA_DEVICE);
+                if (device != null) {
+                    if (device.getVendorId() == mcp2221.MCP2221_VID) {
+                        mcp2221.close();
+                        sToast.setText("Camera Detached");
+
+                    } else if (device.getVendorId() == SPEC_VID) {
+                        spectrometer.close();
+                        sToast.setText("Spectrometer Detached");
+                    }
+                }
+                sToast.show();
+                // close the connection and
+                // release all resources
+                // leave a bit of time for the COM thread to close
+                try {
+                    Thread.sleep(20);
+                } catch (InterruptedException e) {
+                    // TODO Auto-generated catch block
+                    // e.printStackTrace();
+                }
+                mcp2221Comm = null;
+            }
+
+            if (UsbManager.ACTION_USB_DEVICE_ATTACHED.equals(action)) {
+                sToast.setText("Device Attached");
+                sToast.show();
+                final UsbDevice device =
+                        (UsbDevice) intent.getParcelableExtra(UsbManager.EXTRA_DEVICE);
+                if (device != null) {
+
+                    // only try to connect if an MCP2221 is attached
+                    if (device.getVendorId() == MCP2221_VID && device.getProductId() == MCP2221_PID) {
+                        final Constants result = mcp2221.open();
+
+                        switch (result) {
+                            case SUCCESS:
+                                sToast.setText("MCP2221 Connection Opened");
+                                sToast.show();
+                                Log.d("USB", "Connection opened");
+                                mcp2221Comm = new Mcp2221Comm(mcp2221);
+                                setupMCP2221();
+
+                                // if the nav drawer isn't open change the menu icon to show the MCP
+                                // is connected
+
+                                break;
+                            case CONNECTION_FAILED:
+                                sToast.setText("Connection Failed");
+                                sToast.show();
+                                Log.d("USB", "Connection failed");
+
+                                break;
+                            case NO_USB_PERMISSION:
+                                Log.d("USB", "no permission");
+
+                                mcp2221.requestUsbPermission(mPermissionIntent);
+                                break;
+                            default:
+                                break;
+                        }
+                    } else if (device.getVendorId() == SPEC_VID && device.getProductId() == SPEC_PID) {
+                        final Constants result = spectrometer.open();
+
+                        switch (result) {
+                            case SUCCESS:
+                                sToast.setText("Spectrometer Connection Opened");
+                                sToast.show();
+                                Log.d("USB", "Connection opened");
+                                break;
+                            case CONNECTION_FAILED:
+                                sToast.setText("Spectrometer Connection Failed");
+                                sToast.show();
+                                Log.d("USB", "Connection failed");
+                                break;
+                            case NO_USB_PERMISSION:
+                                Log.d("USB", "no permission");
+                                spectrometer.requestUsbPermission(mPermissionIntent);
+                                break;
+                            default:
+                                break;
+                        }
+                    }
+                }
+            }
+
+        }
+    };
+
+*/
+
+    /**
+     * Reset motion tracking to last known valid pose. Once this function is called,
+     * Motion Tracking restarts as such we may get initializing poses again. Developer should make
+     * sure that user gets enough feed back in that case.
+     */
+    private void motionReset() {
+        mTango.resetMotionTracking();
+    }
+    public void readSpectrometer(){
+        if (shouldCollect){
+            try {
+                if (spectrometer != null) {
+                    //Log.d("specto", "spectro?");
+                    //tangoSpectroOutput.writeLong(System.currentTimeMillis());
+                    byte[] spec = spectrometer.captureSpectrum();
+                    //tangoSpectroOutput.write(spec);
+
+
+                    Number[] intensities = new Number[1024];
+                    int numCount = 0;
+                    for (int i = 44; i <= 2091; i = i + 2) {
+                        intensities[numCount] = ByteBuffer.wrap(new byte[]{spec[i + 1], spec[i]}).getShort();
+                        numCount += 1;
+                    }
+                    if (randomGen.nextInt(5) == 0) {
+
+                        series1.setModel(Arrays.asList(intensities), SimpleXYSeries.ArrayFormat.Y_VALS_ONLY);
+
+                        plot.redraw();
+                    }
+
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
+    }
+    public void startCollecting(){
+        shouldCollect = true;
+        final byte b0 = 0;
+        final byte b1 = 1;
+        if (mcp2221Comm != null) {
+            mcp2221Comm.setGpPinValue(b1, b0); // make sure focus is connected to ground
+            mcp2221Comm.setGpPinValue(b0, b0); // trigger the shutter
+            //startCapture();
+            /*try {
+                tangoCamOutput.writeLong(System.currentTimeMillis());
+                Log.d("collecting", "photo start");
+            } catch (IOException e) {
+                e.printStackTrace();
+            }*/
+        }
+    }
+    public void stopCollecting(){
+        shouldCollect = false;
+        final byte b0 = 0;
+        final byte b1 = 1;
+        if (mcp2221Comm != null) {
+            mcp2221Comm.setGpPinValue(b0, b1); // trigger the shutter
+            //startCapture();
+            /*try {
+                tangoCamOutput.writeLong(System.currentTimeMillis());
+                Log.d("collecting", "photo end");
+            } catch (IOException e) {
+                e.printStackTrace();
+            }*/
+        }
+    }
+    public void collect() {
+        Log.d("button", "collecting");
+        if (mCollectButton.getText().equals("Start Collecting")){
+            startCollecting();
+            Log.d("collect", "start collect");
+
+            mCollectButton.setBackgroundColor(getResources().getColor(android.R.color.holo_green_dark));
+            mCollectButton.setText("Stop Collecting");
+
+        } else {
+            stopCollecting();
+            Log.d("collect", "stop collect");
+
+            mCollectButton.setBackgroundColor(getResources().getColor(android.R.color.holo_red_dark));
+            mCollectButton.setText("Start Collecting");
+        }
+    }
 
     @Override
     public void onClick(View v) {
         switch (v.getId()) {
 
             case R.id.resetmotion:
-                //motionReset();
+                motionReset();
                 break;
             case R.id.collect:
-                //collect();
+                collect();
                 break;
 
             case R.id.conCam:
                 //makeSound();
-                //connectCamera();
+                connectCamera();
                 break;
             case R.id.conSpec:
-                //connectSpectrometer();
+                connectSpectrometer();
                 break;
             default:
                 Log.w(TAG, "Unknown button click");
@@ -281,7 +783,15 @@ public class MotionTrackingActivity extends Activity  implements View.OnClickLis
                 mConfig = mTango.getConfig(mConfig.CONFIG_TYPE_CURRENT);
                 mConfig.putBoolean(TangoConfig.KEY_BOOLEAN_MOTIONTRACKING, true);
                 mConfig.putBoolean(TangoConfig.KEY_BOOLEAN_AUTORECOVERY, true);
-                setupTextViewsAndButtons(mConfig);
+
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        setupTextViewsAndButtons(mConfig);
+
+                    }
+                });
+
                 try {
                     setTangoListeners();
                 } catch (TangoErrorException e) {
@@ -298,5 +808,12 @@ public class MotionTrackingActivity extends Activity  implements View.OnClickLis
                 }
             }
         });
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        unregisterReceiver(mUsbReceiver);
+
     }
 }
