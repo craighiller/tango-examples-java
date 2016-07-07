@@ -43,7 +43,9 @@ import android.graphics.Color;
 import android.hardware.usb.UsbDevice;
 import android.hardware.usb.UsbManager;
 import android.os.Bundle;
+import android.os.Environment;
 import android.os.Handler;
+import android.os.SystemClock;
 import android.util.Log;
 import android.view.Gravity;
 import android.view.View;
@@ -54,6 +56,9 @@ import android.widget.Toast;
 import org.rajawali3d.surface.IRajawaliSurface;
 import org.rajawali3d.surface.RajawaliSurfaceView;
 
+import java.io.DataOutputStream;
+import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.text.DecimalFormat;
@@ -128,6 +133,11 @@ public class MotionTrackingActivity extends Activity  implements View.OnClickLis
 
     boolean shouldCollect=false;
     final Random randomGen= new Random();
+
+    private DataOutputStream tangoPoseOutput;
+    private DataOutputStream tangoDepthOutput;
+    private DataOutputStream tangoCamOutput;
+    private DataOutputStream tangoSpectroOutput;
 
     /*********************************************************
      * USB actions broadcast receiver.
@@ -269,6 +279,43 @@ public class MotionTrackingActivity extends Activity  implements View.OnClickLis
                     break;
             }
         }
+
+        File root = new File(Environment.getExternalStorageDirectory()+File.separator+"CraigData"+System.currentTimeMillis());
+        try{
+            if(root.mkdir()) {
+                System.out.println("Directory created");
+            } else {
+                System.out.println("Directory is not created");
+            }
+        }catch(Exception e){
+            e.printStackTrace();
+        }
+        File poutput = new File(root, "pose.dat");
+        File doutput = new File(root, "depth.dat");
+        File coutput = new File(root, "cam.dat");
+        File soutput = new File(root, "spec.dat");
+        Log.d("onCreate", "files setup");
+
+        FileOutputStream pfos;
+        FileOutputStream dfos;
+        FileOutputStream cfos;
+        FileOutputStream sfos;
+        try {
+            pfos = new FileOutputStream(poutput);
+            tangoPoseOutput = new DataOutputStream(pfos);
+
+            cfos = new FileOutputStream(coutput);
+            tangoCamOutput = new DataOutputStream(cfos);
+
+            dfos = new FileOutputStream(doutput);
+            tangoDepthOutput = new DataOutputStream(dfos);
+
+            sfos = new FileOutputStream(soutput);
+            tangoSpectroOutput = new DataOutputStream(sfos);
+
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
     }
 
     private MotionTrackingRajawaliRenderer setupGLViewAndRenderer() {
@@ -324,7 +371,26 @@ public class MotionTrackingActivity extends Activity  implements View.OnClickLis
 
                 // save values
                 if (pose != null) {
+                    if (shouldCollect) {
+                        try {
+                            tangoPoseOutput.writeLong(System.currentTimeMillis());
 
+                            tangoPoseOutput.writeDouble(pose.timestamp);
+                            tangoPoseOutput.writeDouble(pose.translation[0]);
+                            tangoPoseOutput.writeDouble(pose.translation[1]);
+                            tangoPoseOutput.writeDouble(pose.translation[2]);
+
+                            tangoPoseOutput.writeDouble(pose.rotation[0]);
+                            tangoPoseOutput.writeDouble(pose.rotation[1]);
+                            tangoPoseOutput.writeDouble(pose.rotation[2]);
+                            tangoPoseOutput.writeDouble(pose.rotation[3]);
+                            //Log.d("collect", "wrote stuff");
+
+
+                        } catch (IOException e) {
+                            e.printStackTrace();
+                        }
+                    }
                     if (updateUI) {
 
                         final String translationString =
@@ -524,9 +590,9 @@ public class MotionTrackingActivity extends Activity  implements View.OnClickLis
             try {
                 if (spectrometer != null) {
                     //Log.d("specto", "spectro?");
-                    //tangoSpectroOutput.writeLong(System.currentTimeMillis());
+                    tangoSpectroOutput.writeLong(System.currentTimeMillis());
                     byte[] spec = spectrometer.captureSpectrum();
-                    //tangoSpectroOutput.write(spec);
+                    tangoSpectroOutput.write(spec);
 
 
                     Number[] intensities = new Number[1024];
@@ -543,7 +609,7 @@ public class MotionTrackingActivity extends Activity  implements View.OnClickLis
                     }
 
                 }
-            } catch (Exception e) {
+            } catch (IOException e) {
                 e.printStackTrace();
             }
         }
@@ -556,12 +622,13 @@ public class MotionTrackingActivity extends Activity  implements View.OnClickLis
             mcp2221Comm.setGpPinValue(b1, b0); // make sure focus is connected to ground
             mcp2221Comm.setGpPinValue(b0, b0); // trigger the shutter
             //startCapture();
-            /*try {
+            try {
+                Log.d("collecting", ""+System.currentTimeMillis());
                 tangoCamOutput.writeLong(System.currentTimeMillis());
                 Log.d("collecting", "photo start");
             } catch (IOException e) {
                 e.printStackTrace();
-            }*/
+            }
         }
     }
     public void stopCollecting(){
@@ -571,12 +638,12 @@ public class MotionTrackingActivity extends Activity  implements View.OnClickLis
         if (mcp2221Comm != null) {
             mcp2221Comm.setGpPinValue(b0, b1); // trigger the shutter
             //startCapture();
-            /*try {
+            try {
                 tangoCamOutput.writeLong(System.currentTimeMillis());
                 Log.d("collecting", "photo end");
             } catch (IOException e) {
                 e.printStackTrace();
-            }*/
+            }
         }
     }
     public void collect() {
