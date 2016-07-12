@@ -260,6 +260,9 @@ public class MotionTrackingActivity extends Activity  implements View.OnClickLis
         mcp2221 = new MCP2221(this);
         result = MicrochipUsb.getConnectedDevice(this);
 
+        startActivityForResult(mTango.getRequestPermissionIntent(Tango.PERMISSIONTYPE_ADF_LOAD_SAVE),mTango.TANGO_INTENT_ACTIVITYCODE);
+
+
         if (result == Constants.MCP2221) {
             // try to open a connection
             result = mcp2221.open();
@@ -334,7 +337,12 @@ public class MotionTrackingActivity extends Activity  implements View.OnClickLis
         framePairs.add(new TangoCoordinateFramePair(
                 TangoPoseData.COORDINATE_FRAME_START_OF_SERVICE,
                 TangoPoseData.COORDINATE_FRAME_DEVICE));
-
+        framePairs.add(new TangoCoordinateFramePair(
+                TangoPoseData.COORDINATE_FRAME_AREA_DESCRIPTION,
+                TangoPoseData.COORDINATE_FRAME_DEVICE));
+        framePairs.add(new TangoCoordinateFramePair(
+                TangoPoseData.COORDINATE_FRAME_AREA_DESCRIPTION,
+                TangoPoseData.COORDINATE_FRAME_START_OF_SERVICE));
         mTango.connectListener(framePairs, new OnTangoUpdateListener() {
 
             @Override
@@ -377,13 +385,14 @@ public class MotionTrackingActivity extends Activity  implements View.OnClickLis
                             && pose.targetFrame == TangoPoseData.COORDINATE_FRAME_DEVICE) {
 
                         // LOCALIZED!!!!!
-                        ColorDrawable cd = (ColorDrawable) mLocalizationTextView.getBackground();
+                        /*ColorDrawable cd = (ColorDrawable) mLocalizationTextView.getBackground();
                         if (cd.getColor() == getResources().getColor(android.R.color.holo_green_dark)) {
                             mLocalizationTextView.setBackgroundColor(getResources().getColor(android.R.color.holo_purple));
                         } else {
                             mLocalizationTextView.setBackgroundColor(getResources().getColor(android.R.color.holo_green_dark));
-                        }
-                        if (shouldCollect) {
+                        }*/
+                        Log.d("LOCALIZED", "yay");
+                        if (true) {
                             try {
                                 tangoPoseOutput.writeLong(System.currentTimeMillis());
 
@@ -403,27 +412,28 @@ public class MotionTrackingActivity extends Activity  implements View.OnClickLis
                                 e.printStackTrace();
                             }
                         }
-                    }
-                    if (updateUI) {
+                        if (updateUI) {
 
-                        final String translationString =
-                                TangoPoseUtilities.getTranslationString(pose, FORMAT_THREE_DECIMAL);
-                        final String quaternionString =
-                                TangoPoseUtilities.getQuaternionString(pose, FORMAT_THREE_DECIMAL);
-                        final String status = TangoPoseUtilities.getStatusString(pose);
+                            final String translationString =
+                                    TangoPoseUtilities.getTranslationString(pose, FORMAT_THREE_DECIMAL);
+                            final String quaternionString =
+                                    TangoPoseUtilities.getQuaternionString(pose, FORMAT_THREE_DECIMAL);
+                            final String status = TangoPoseUtilities.getStatusString(pose);
 
-                        runOnUiThread(new Runnable() {
-                            @Override
-                            public void run() {
-                                // Display pose data on screen in TextViews.
-                                mPoseTextView.setText(translationString);
-                                mQuatTextView.setText(quaternionString);
-                                mPoseCountTextView.setText(Integer.toString(count));
-                                mDeltaTextView.setText(FORMAT_THREE_DECIMAL.format(deltaTime));
-                                mPoseStatusTextView.setText(status);
-                            }
-                        });
+                            runOnUiThread(new Runnable() {
+                                @Override
+                                public void run() {
+                                    // Display pose data on screen in TextViews.
+                                    mPoseTextView.setText(translationString);
+                                    mQuatTextView.setText(quaternionString);
+                                    mPoseCountTextView.setText(Integer.toString(count));
+                                    mDeltaTextView.setText(FORMAT_THREE_DECIMAL.format(deltaTime));
+                                    mPoseStatusTextView.setText(status);
+                                }
+                            });
+                        }
                     }
+
 
                 }
             }
@@ -539,7 +549,7 @@ public class MotionTrackingActivity extends Activity  implements View.OnClickLis
                 sToast.show();
                 mConnectSpecButton.setBackgroundColor(getResources().getColor(android.R.color.holo_green_dark));
                 final Handler specHandler = new Handler();
-                final int specDelay = 50; //milliseconds
+                final int specDelay = 15; //milliseconds
 
                 specHandler.postDelayed(new Runnable() {
                     public void run() {
@@ -713,43 +723,34 @@ public class MotionTrackingActivity extends Activity  implements View.OnClickLis
             @Override
             public void run() {
                 //startActivityForResult(mTango.getRequestPermissionIntent(Tango.PERMISSIONTYPE_DATASET),mTango.TANGO_INTENT_ACTIVITYCODE);
-                //startActivityForResult(mTango.getRequestPermissionIntent(Tango.PERMISSIONTYPE_ADF_LOAD_SAVE),mTango.TANGO_INTENT_ACTIVITYCODE);
                 //startActivityForResult(mTango.getRequestPermissionIntent(Tango.PERMISSIONTYPE_MOTION_TRACKING),mTango.TANGO_INTENT_ACTIVITYCODE);
 
                 mConfig = mTango.getConfig(mConfig.CONFIG_TYPE_CURRENT);
                 mConfig.putBoolean(TangoConfig.KEY_BOOLEAN_MOTIONTRACKING, true);
-                mConfig.putBoolean(TangoConfig.KEY_BOOLEAN_AUTORECOVERY, true);
-                mConfig.putBoolean(TangoConfig.KEY_BOOLEAN_COLORCAMERA, true);
-                mConfig.putBoolean(TangoConfig.KEY_BOOLEAN_COLORMODEAUTO, true);
-                mConfig.putBoolean(TangoConfig.KEY_BOOLEAN_HIGH_RATE_POSE, true);
-                mConfig.putBoolean(TangoConfig.KEY_BOOLEAN_LEARNINGMODE, true);
+                //mConfig.putBoolean(TangoConfig.KEY_BOOLEAN_AUTORECOVERY, true);
+                //mConfig.putBoolean(TangoConfig.KEY_BOOLEAN_COLORCAMERA, true);
+                //mConfig.putBoolean(TangoConfig.KEY_BOOLEAN_COLORMODEAUTO, true);
+                //mConfig.putBoolean(TangoConfig.KEY_BOOLEAN_HIGH_RATE_POSE, true);
+               // mConfig.putBoolean(TangoConfig.KEY_BOOLEAN_LEARNINGMODE, true);
 
-//                ArrayList<String> fullUUIDList = new ArrayList<String>();
-//// Returns a list of ADFs with their UUIDs
-//                fullUUIDList = mTango.listAreaDescriptions();
-//
-//// Load the latest ADF if ADFs are found.
-//                if (fullUUIDList.size() > 0) {
-//                    mConfig.putString(TangoConfig.KEY_STRING_AREADESCRIPTION,
-//                            fullUUIDList.get(fullUUIDList.size() - 1));
-//                }
+                ArrayList<String> fullUuidList;
+                // Returns a list of ADFs with their UUIDs
+                fullUuidList = mTango.listAreaDescriptions();
+                // Load the latest ADF if ADFs are found.
+                if (fullUuidList.size() > 0) {
+                    String uuid = fullUuidList.get(fullUuidList.size() - 1);
+                    mConfig.putString(TangoConfig.KEY_STRING_AREADESCRIPTION, uuid);
 
-//                try {
-                  mConfig.putString(TangoConfig.KEY_STRING_AREADESCRIPTION, "dfe699b4-e9ad-458f-8983-2610cbed6af5");
-//                } catch (TangoErrorException e) {
-//                    // handle exception
-//                    Log.d("tangoError","adf error");
-//                }
-                //mConfig.putBoolean(TangoConfig.KEY_BOOLEAN_DATASETRECORDING, true);
-                //mConfig.putString(TangoConfig.KEY_STRING_DATASETS_PATH, Environment.getExternalStorageDirectory() + File.separator + "ACraigTangoDataSets/");
-                //mConfig.putInt(TangoConfig.KEY_INT_DATASETRECORDING_MODE, TangoConfig.TANGO_DATASETRECORDING_MODE_ALL);
-                        runOnUiThread(new Runnable() {
-                            @Override
-                            public void run() {
-                                setupTextViewsAndButtons(mConfig);
 
-                            }
-                        });
+                }
+
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        setupTextViewsAndButtons(mConfig);
+
+                    }
+                });
 
                 try {
                     setTangoListeners();
