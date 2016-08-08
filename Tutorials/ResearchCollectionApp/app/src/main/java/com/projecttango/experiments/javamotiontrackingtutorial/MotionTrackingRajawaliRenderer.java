@@ -104,9 +104,9 @@ public class MotionTrackingRajawaliRenderer extends RajawaliRenderer {
                 mFrustumAxes.setPosition(mDevicePose.getPosition());
                 mFrustumAxes.setOrientation(mDevicePose.getOrientation());
 
-                if (mTrajectory.getLastPoint().distanceTo2(mDevicePose.getPosition()) > THRESHOLD) {
-                    mTrajectory.addSegmentTo(mDevicePose.getPosition());
-                }
+                //if (mTrajectory.getLastPoint().distanceTo2(mDevicePose.getPosition()) > THRESHOLD) {
+                //    mTrajectory.addSegmentTo(mDevicePose.getPosition());
+                //}
 
                 touchViewHandler.updateCamera(mDevicePose.getPosition(), mDevicePose.getOrientation());
             }

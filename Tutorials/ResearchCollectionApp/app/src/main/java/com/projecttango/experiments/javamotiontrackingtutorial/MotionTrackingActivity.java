@@ -347,7 +347,6 @@ public class MotionTrackingActivity extends Activity  implements View.OnClickLis
 
             @Override
             public void onPoseAvailable(final TangoPoseData pose) {
-                mRenderer.updateDevicePose(pose);
                 //logPose(pose);
                 final double deltaTime = (pose.timestamp - mPreviousTimeStamp)
                         * SECS_TO_MILLISECS;
@@ -383,6 +382,7 @@ public class MotionTrackingActivity extends Activity  implements View.OnClickLis
                 if (pose != null) {
                     if (pose.baseFrame == TangoPoseData.COORDINATE_FRAME_AREA_DESCRIPTION
                             && pose.targetFrame == TangoPoseData.COORDINATE_FRAME_DEVICE) {
+                        mRenderer.updateDevicePose(pose);
 
                         // LOCALIZED!!!!!
                         /*ColorDrawable cd = (ColorDrawable) mLocalizationTextView.getBackground();
@@ -465,7 +465,7 @@ public class MotionTrackingActivity extends Activity  implements View.OnClickLis
         mTangoServiceVersionTextView = (TextView) findViewById(R.id.version);
         mApplicationVersionTextView = (TextView) findViewById(R.id.appversion);
 
-        mLocalizationTextView = (TextView) findViewById(R.id.localized);
+        //mLocalizationTextView = (TextView) findViewById(R.id.localized);
 
         // Button to reset motion tracking
         mMotionResetButton = (Button) findViewById(R.id.resetmotion);
@@ -738,7 +738,7 @@ public class MotionTrackingActivity extends Activity  implements View.OnClickLis
                 fullUuidList = mTango.listAreaDescriptions();
                 // Load the latest ADF if ADFs are found.
                 if (fullUuidList.size() > 0) {
-                    String uuid = fullUuidList.get(fullUuidList.size() - 1);
+                    String uuid = fullUuidList.get(fullUuidList.size() - 7);
                     mConfig.putString(TangoConfig.KEY_STRING_AREADESCRIPTION, uuid);
 
 

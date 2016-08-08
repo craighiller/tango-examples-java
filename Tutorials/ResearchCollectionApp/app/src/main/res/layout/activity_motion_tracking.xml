@@ -251,15 +251,6 @@
         android:background="@android:color/holo_red_dark"
         android:text="Start Collecting" />
 
-    <TextView
-        android:id="@+id/localized"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_alignParentBottom="true"
-        android:layout_alignParentLeft="true"
-        android:layout_marginLeft="455dp"
-        android:height="100dp"
-        android:background="@android:color/holo_red_dark"
-        android:text="Not\nLocalized" />
+
 
 </RelativeLayout>
